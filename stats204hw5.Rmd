@@ -1,0 +1,318 @@
+---
+title: "Stats 204 Homework 5"
+author: "Jordan Berninger"
+date: "11/20/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(ISwR)
+library("scatterplot3d")
+library(MASS)
+data(crabs)
+data(mammals)
+```
+
+
+1. In the malaria dataset, analyze the risk of malaria via logistic regression with age and the log-transformed antibody level as explanatory variables. Explain your model, analysis and conclusions. 
+
+We will use the $glm()$ function in R to fit the following logistic regression model: $logit(p_i) = \beta_0 + \beta_1*log(ab_i) + \beta_2*age_i + \beta_3*(age_i*log(ab_i))$ where $p_i = P(Y_i = 1 | X)$. Since $log(ab)$ and $age$ are continuous variables, the model only has one parameter associated with each of these variables - we do not have more parmaeters associated with the various factor levels. We also begin with the interaction effect in the model, which also only has one associated parameter. We fit the model:
+
+```{r}
+data(malaria)
+m1 <- glm(data = malaria, mal ~ age*log(ab), family = "binomial")
+summary(m1)
+```
+
+The model summary tells us that the interaction effect is insignificant, so we will fit a model without it next. This next model is defined by:  $logit(p_i) = \beta_0 + \beta_1*log(ab_i) + \beta_2*age_i$ where $p_i = P(Y_i = 1 | X)$. 
+
+```{r}
+m2 <- glm(data = malaria, mal ~ age + log(ab), family = "binomial")
+summary(m2)
+```
+
+This model indicates that the age variable is insignificant, so we will fit a model without it. This leaves us with the model: $logit(p_i) = \beta_0 + \beta_1*log(ab_i)$ where $p_i = P(Y_i = 1 | X)$
+
+```{r}
+m3 <- glm(data = malaria, mal ~ log(ab), family = "binomial")
+summary(m3)
+```
+
+
+At a confidence level of 0.05, we reject the null hypotheses that $\beta_0 = 0$ and $\beta_1 = 0$, which means that our model $logit(p_i) = \beta_0 + \beta_1*log(ab_i)$ only has significant parameters. Additionally, this model has the lowest AIC and so it is our favorite model and it is the one we will use for estimation.
+
+We now want the 95% confidence intervals for the parameter estimates, noting that the parameter associated with $log(ab)$ has a  95% confidence interval that is strictly less than 1, which means increases in $log(ab)$ translates to a decrease in the log-odds ratio of the risk of malaria.
+
+```{r}
+ exp(cbind(OR=coef(m3), confint(m3)))
+```
+
+
+2. Fit a logistic regression model to the graft.vs.host data predicting gvhd response. Use different transformations of the index variable. 
+
+I have fit many, many model as part of this analysis and several interesting things jump out. 
+    - First, we note that we cannot include the $pnr$ variable in the model since this is a unique identifier. 
+    - Second, we note that the model without any transformations produces a model with a perfect fit, as seen in the following model summary of model $m4$ below. 
+    - Third, We notice that doing the log-transformation on time removes this perfect fit problem without us removing any additional columns, as seen in the summary of model $m5$.
+
+
+```{r}
+data(graft.vs.host)
+m4 <- glm(data = graft.vs.host, gvhd ~ index + rcpage + donage + type + preg + time + dead, 
+          family = binomial)
+summary(m4)
+m5 <- glm(data = graft.vs.host, gvhd ~ index + rcpage + donage + type + preg  + log(time) + dead, 
+          family = binomial)
+summary(m5)
+```
+
+Now we will keep all the variables, including log(time),  as predictors and will investiage the impact of various transformations to index, paying attention to the significance of variables and the model AIC. The transformations we will consider are the log(index), square root(index), cube-root(index), index^2, and index^1.5. We will systematically fit this complete model with various transformations on index and we will see which model optimizes the AIC.
+
+Now we note the taking the log transformation to index produces a model with a perfect fit, which is strange. 
+
+```{r}
+m6 <- glm(data = graft.vs.host, gvhd ~ log(index) + rcpage + donage + type + preg  + log(time) + dead, 
+          family = binomial)
+summary(m6)
+```
+
+```{r}
+m7 <- glm(data = graft.vs.host, gvhd ~ sqrt(index) + rcpage + donage + type + preg  + log(time) + dead, 
+          family = binomial)
+summary(m7)
+m8 <- glm(data = graft.vs.host, gvhd ~ I(index^(1/3)) + rcpage + donage + type + preg  + log(time) + dead, 
+          family = binomial)
+summary(m8)
+m9 <- glm(data = graft.vs.host, gvhd ~ I(index^1.5) + rcpage + donage + type + preg  + log(time) + dead, 
+          family = binomial)
+summary(m9)
+m10 <- glm(data = graft.vs.host, gvhd ~ I(index^2) + rcpage + donage + type + preg  + log(time) + dead, 
+           family = binomial)
+summary(m10)
+```
+
+For the models that include all the predictor variables, we see that the model which include $\text{index}^{1/3}$ has the lowest training set AIC (25.451) while not producing a perfect fit. Accordingly, we concluide that the squared transformation is the most apt. However, we notice that the other predictor varaibles have very high p-values across all the models. This indicates to me that we should fit models that have index (transformed) as the only predictor for modeling gvhd.
+
+Now, we will remove the other variables since none of the model summary concluded that they were significant. We will now fit models that exclusively have index, iterating across the same transformation. We will include the log-transformation to index this time around. The following models are of the form: $logit(p_i) = \beta_0 + \beta_1*\text{index*}$, where index* is the transformation to the index variable
+
+```{r, warning = FALSE}
+m11 <- glm(data = graft.vs.host, gvhd ~ sqrt(index), family = binomial)
+summary(m11)
+m12 <- glm(data = graft.vs.host, gvhd ~ I(index^(1/3)), family = binomial)
+summary(m12)
+m13 <- glm(data = graft.vs.host, gvhd ~ I(index^1.5), family = binomial)
+summary(m13)
+m14 <- glm(data = graft.vs.host, gvhd ~ I(index^2), family = binomial)
+summary(m14)
+m15 <- glm(data = graft.vs.host, gvhd ~ log(index), family = binomial)
+summary(m15)
+m16 <- glm(data = graft.vs.host, gvhd ~ index, family = binomial)
+summary(m16)
+
+```
+
+Overall, we see that these smaller models have higher AIC values, but that the model that has the log(index) has the lowest AIC out of this group of models as well (AIC = 41.74).
+
+This analysis isn't completely black and white, but we conclude that the log transformation to index is the most appropraite. Our firs batch of models included all the predictor variables and showed that they are not significant covariates. We then applied logistic regression models on gvhd using only transformations to index as the predictor. In this case, we saw that the log(index) produced the smallest training set AIC, so that is our favorite. 
+
+If this were a linear regression situation, we could apply the Box Cox procedure directly, but since this is a logistic regression situation, I do not know how to adapt Box Cox accordingly, but I am sure it is possible.
+
+3.  The dataset SpaceShuttle available in the R package vcd contains data for 24 space shuttle flights before the Challenger mission disaster in 1986. In particular, it contains the flight number, temperature and pressure at the time of the flight, and whether at least one primary O-ring suffered thermal distress. Use a logistic regression model to model the effect of temperature and pressure on the probability of thermal distress. Explain your model, analysis and conclusions. 
+
+We read in the data, drop one row that has missing data and notice that both temperature and pressure are continuous variables by default. Since we want to predict failure, we will use logistic regression models. We will first model failure with both temperature and pressure as continuous variables, and then we will switch them to factor and evalute the impact. 
+
+First, implement the following model: $logit(p_i) = \beta_0 + \beta_1 temperature_i + \beta_2 pressure_i$, where $P(Y_i = 1 | X) = p_i$. This model's summary indicates the Pressure is an insignificant variable. However, looking at the data, we see there are 3 distinct pressure levels, so it makes sense to convert Pressure into a factor before dropping it from the model entirely.
+
+```{r}
+library(vcd)
+data(SpaceShuttle)
+
+j1 <- glm(data = na.omit(SpaceShuttle), Fail ~ Temperature + Pressure, family = binomial)
+summary(j1)
+```
+
+Next, we have the model: $logit(p_i) = \beta_0 + \beta_1 temperature_i + \gamma_i$, where $\gamma_i$ is the pressure effect and $P(Y_i=1|X) = p_i$. This model summary indicates that factor(pressure) is still insignificnt.
+
+```{r}
+j2 <- glm(data = na.omit(SpaceShuttle), Fail ~ Temperature + factor(Pressure), family = binomial)
+summary(j2)
+```
+
+Now, we will also implement the model where both temperature and pressure are factor variables. Accordingly, we have the model: $logit(p_i) = \beta_0 + \alpha_i + \gamma_i$, where $\alpha_i$ is the temperature effect, $\gamma_i$ is the pressure effect.
+
+```{r}
+j3 <- glm(data = na.omit(SpaceShuttle), Fail ~ factor(Temperature) + factor(Pressure), family = binomial)
+summary(j3)
+```
+
+This model is not ideal because we have 17 different values for Temperature, 3 different values for Pressure and only 23 data points (after we remove one row with missing data). Accordingly, this model has very low Residual Deviance, but there is not much insight from the model because it is nearly a perfect fit. We also note that this same problem occurs when we have temperature as a factor and pressure as a continuous variables. It does not make sense to investigate an interaction effect between temperature and pressure, since that model would have more parameters than data points. 
+
+Now, we have seen that (1) converting temperature to a factor creates too many parameters for the number of data points to get a sensible model and (2) pressure is insignificant whether it is continuous or a factor. Accordingly, we conclude that pressure does not have a significant impact on o-ring failure. This leaves us with the model: $logit(p_i) = \beta_0 + \beta_1\text{temperature}$.
+
+```{r}
+j4 <- glm(data = na.omit(SpaceShuttle), Fail ~ Temperature, family = binomial)
+summary(j4)
+```
+
+From the summary of model $j4$, using a confidence level of 0.05, we reject both null hypotheses that $\beta_0 = 0$ and $\beta_1 = 0$. We concluded that pressure does not have a significant impact on o-ring failure. We also conclude that as temperature rises, the log odds ratio of failure decreases. This means that as temperature goes up, the estimated probability of failure decreases.
+
+4. Problem 2.14  Albert & Rizzo
+
+Refer to Example 2.10. Repeat the cluster analysis using Ward’s minimum variance method instead of nearest neighbor (complete) linkage. Ward’s method is implemented in hclust with method="ward" when the first argument is the squared distance matrix. Display a dendrogram and compare the result with the dendrogram for the nearest neighbor method.
+
+Since we are already familiar with this dataset, no EDA is necessary here. We will follow the instructions and Example 2.10 closely here.
+
+The results for the 2 different methods are fairly similar. Both methods segment the elephants into a distinct branch with one of the first splits in the tree. We can also notice that the other large mammals (Cox, Giraffe, Horse, Okapi, Grey Seal, Human) are closely clustered in both dendrograms, albeit on different sides of the trees. 
+
+```{r}
+library(ggdendro)
+data(mammals)
+
+d = dist(mammals)
+
+h = hclust(d^2, method="ward.D")
+ggdendrogram(h) + ggtitle("Method = ward")
+
+
+h2 = hclust(d, method="complete")
+ggdendrogram(h2) + ggtitle("Method = complete")
+
+```
+
+
+When we subset to the big mammals, very different dendograms in terms of the order of the names. However, there are certain, meaningful similarities, such as the 2 elephants being in the same terminal branch in both dendograms. Looking at the ordering of the distances, we see that the 2 methods have the same first 6, and last 2, mammals in order.
+
+```{r}
+big = subset(mammals, subset=(body > median(body)))
+
+d = dist(big)
+
+h = hclust(d^2, method="ward.D")
+ggdendrogram(h) + ggtitle("Method = ward")
+
+
+h2 = hclust(d, method="complete")
+ggdendrogram(h2) + ggtitle("Method = complete")
+```
+
+The ordering of the mammal's names is very similar for the 2 methods we tested. While the dendograms look a little different, the underlying orders are quite similar. It is interesting and noteworthy that we see similar outputs for the 2 methods considering that the Ward method uses the squared distance matrix and the Complete method uses the standard distance matrix. 
+
+5. Problem 2.15 Albert & Rizzo 
+
+After cluster analysis, one is often interested in identifying groups or clusters in the data. In a hierarchical cluster analysis such as in Example 2.10, this corresponds to cutting the dendrogram (e.g. Figure 2.20) at a given level. The cutree function is an easy way to find the corresponding groups. For example, in Example 2.10, we saved the result of our complete-linkage clustering in an object h. To cut the tree to form five groups we use cutree with k=5: $g = cutree(h, 5)$. Display $g$ to see the labels of each observation. Summarize the group sizes using $table(g)$. There are three clusters that have only one mammal. Use $mammals[g > 2]$ to identify which three mammals are singleton clusters.
+
+We will use our clusterings from the full dataset, not the subset of large animals. We split these dendograms into 5 clusters, as instructed, and we go through them serially, noting that the clusters are very, very similar.
+
+```{r}
+k <- 5
+# ward = h, complete = h2
+g <- cutree(h, k)
+table(g)
+
+g2 <- cutree(h2, k)
+table(g2)
+```
+
+For both the ward and complete dendogram, There are 3 singleton clusters, which are identical for the 2 methods.
+
+```{r}
+g[g == 5]
+g2[g2 == 5]
+
+g[g == 4]
+g2[g2 == 4]
+
+g[g == 3]
+g2[g2 == 3]
+```
+
+
+The 2nd cluster for the Complete method only has 3 members, all 3 of which are in the 2nd cluster from the Ward method. We also note that these are medium sized mammals.
+
+```{r}
+print("Ward")
+g[g == 2]
+print("Complete")
+g2[g2 == 2]
+```
+
+
+Finally, we see significant overlap, albeit different size and orders, of the 1st clusters from each method. These animal are all medium-small sized and, from what I can tell, there is very little variance in the sizes across these species. 
+
+```{r}
+print("Ward")
+g[g == 1]
+print("Complete")
+g2[g2 == 1]
+```
+
+Inspecting the 5 clusters from each method using the cuttree fcuntion reveals that these 2 methods produce nearly identical clusterings of the mammals, despite using different distance metrics in their algorithms (recall ward uses the squared distance matrix). This is a striking result. We could investigate what happens when we cluster into more or less groups, but that is not within the scope of this problem.
+
+There was a last minute addendum to this question, I concluded that I did not need to change the above response, which I had completed before the change.
+
+6. The dataset crabs from the library MASS contains 200 rows and 8 columns describing 5 morphological measurements on 50 crabs each of two color forms and both sexes, of the species Leptograpsus variegatus. Is there evidence from the morphological data alone of a division of two forms of crabs? 
+
+We are interested in seeing if there are natural distinctions between the colors in the morphological measurements. We will perform principal component analysis on these variables and then we will visualize the principal components with the crab form types to see if there is an underlying distinction.
+
+First, some bar plots show indications that there are significant morphological differences across the color types:
+
+```{r}
+ggplot(data = crabs, aes(x=sp,y=FL,factor=sp,fill=sp))+geom_boxplot()+theme_bw() + 
+  ggtitle("FL by Species")
+ggplot(data = crabs, aes(x=sp,y=RW,factor=sp,fill=sp))+geom_boxplot()+theme_bw() + 
+  ggtitle("RW by Species")
+```
+
+
+We also see very high multicollinearity in the morphological variables:
+
+```{r}
+crabs %>% dplyr::select(-c(sex,index,sp)) %>% pairs()
+```
+
+
+```{r}
+pcdata = subset(crabs, select = -c(sp,sex,index))
+crabs.pc = princomp(pcdata, cor=TRUE)
+summary(crabs.pc)
+crabs.pc$loadings
+ir.pc <- predict(crabs.pc)
+```
+
+We see that almost 99% of the variance in the 2 groups, which means we lose very little information while reducing the dimentsions from 5 to 3. When we project the data on the plans defined by the principal components, we see that there is a clear distinct between the orange and blue crabs. This distinction is not captured by only the first 2 principal components.
+
+```{r}
+par(mfrow = c(1,2))
+plot(ir.pc[,1], ir.pc[,2], col = ifelse(crabs$sp == "B", "blue", "orange"))
+plot(ir.pc[,1], ir.pc[,3], col = ifelse(crabs$sp == "B", "blue", "orange"))
+```
+
+The 3-D scatter plot shows gives an insightful view into the separation of our data across the first 3 principal components.
+
+```{r}
+scatterplot3d(ir.pc[,1:3], 
+              color = ifelse(crabs$sp == "B", "blue", "orange"),
+              angle = 150)
+```
+
+
+It is also interesting to see that the same principal component analysis captures the distiction between the sexes. In the following plots we see that the first 2 principal components models the distinction between the gender of the crabs.
+
+```{r}
+par(mfrow = c(1,2))
+plot(ir.pc[,1], ir.pc[,2], col = ifelse(crabs$sex == "M", "black", "pink"))
+plot(ir.pc[,1], ir.pc[,3], col = ifelse(crabs$sex == "M", "black", "pink"))
+```
+
+```{r}
+scatterplot3d(ir.pc[,1:3], 
+              color = ifelse(crabs$sex == "M", "black", "pink"),
+              angle = 300)
+```
+
+This is a cool analysis. We started with 5 continuous variables with high multicollinearity. Through PCA, we were able to reduce the data to 3 dimensions that account for 98% of of the variance and are useful in distinguishing between both sex and color of the crabs. Given the morphological dimensions of any crabs, we should be confident in our ability to classify it.
